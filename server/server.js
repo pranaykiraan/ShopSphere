@@ -1,47 +1,137 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
-
+const mongoose = require('mongoose');
+const MONGO_URI = process.env.MONGO_URI || 'YOUR_MONGODB_URI_HERE';
 const app = express();
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
-// Database Connection
-mongoose.connect('mongodb://127.0.0.1:27017/shopsphere')
-  .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.error(err));
+// 1. Connect to MongoDB
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://pranaykrishna555_db_user:shopsphere@cluster0.1qajilf.mongodb.net/?appName=Cluster0';
 
-// Schema
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('Connected to MongoDB successfully!'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+// 2. Define Mongoose Schemas & Models
 const productSchema = new mongoose.Schema({
-  name: String,
+  name: { type: String, required: true },
   description: String,
-  price: Number,
+  price: { type: Number, required: true },
   imageUrl: String
 });
+
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true }
+});
+
+const orderSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  items: Array,
+  subtotal: Number,
+  status: { type: String, default: 'COMPLETED' },
+  createdAt: { type: Date, default: Date.now }
+});
+
 const Product = mongoose.model('Product', productSchema);
+const User = mongoose.model('User', userSchema);
+const Order = mongoose.model('Order', orderSchema);
 
-// Routes
-app.get('/api/products', async (req, res) => {
-  const products = await Product.find();
-  res.json(products);
-});
+// 3. API Routes
 
-app.post('/api/products', async (req, res) => {
-  const product = new Product(req.body);
-  await product.save();
-  res.status(201).json(product);
-});
-
-// Seed Route
+// Seed Initial Products (if DB is empty)
 app.get('/api/seed', async (req, res) => {
-  await Product.deleteMany({});
-  const sample = await Product.create({
-    name: "Wireless Noise-Canceling Headphones",
-    description: "Premium sound quality with active noise cancellation.",
-    price: 199.99,
-    imageUrl: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e"
-  });
-  res.json({ message: "Seeded successfully!", product: sample });
+  const count = await Product.countDocuments();
+  if (count === 0) {
+    await Product.insertMany([
+      { name: 'Wireless Headphones', description: 'High quality noise cancelling', price: 99.99, imageUrl: 'https://picsum.photos/200?random=1' },
+      { name: 'Mechanical Keyboard', description: 'Tactile switches with RGB', price: 129.99, imageUrl: 'https://picsum.photos/200?random=2' },
+      { name: 'Ergonomic Mouse', description: 'Precision mouse for long work hours', price: 49.99, imageUrl: 'https://picsum.photos/200?random=3' }
+    ]);
+    return res.json({ message: 'Database seeded with sample products!' });
+  }
+  res.json({ message: 'Database already has products.' });
 });
 
-app.listen(5000, () => console.log('Server running on http://localhost:5000'));
+// GET All Products
+app.get('/api/products', async (req, res) => {
+  try {
+    const products = await Product.find();
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// User Register
+app.post('/api/auth/register', async (req, res) => {
+  const { name, email, password } = req.body;
+  try {
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(400).json({ message: 'Email already exists' });
+
+    const user = new User({ name, email, password });
+    await user.save();
+
+    res.status(201).json({
+      token: 'fake-jwt-token',
+      user: { id: user._id, name: user.name, email: user.email }
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// User Login
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const user = await User.findOne({ email, password });
+    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+
+    res.json({
+      token: 'fake-jwt-token',
+      user: { id: user._id, name: user.name, email: user.email }
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Checkout (Create Order)
+app.post('/api/orders/checkout', async (req, res) => {
+  const userId = req.headers['user-id'] || 'guest';
+  const { items, subtotal } = req.body;
+
+  if (!items || items.length === 0) {
+    return res.status(400).json({ message: 'Cart is empty' });
+  }
+
+  try {
+    const order = new Order({ userId, items, subtotal });
+    await order.save();
+
+    res.status(201).json({
+      message: 'Order placed successfully!',
+      order: { id: order._id, subtotal: order.subtotal, items: order.items }
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET Order History
+app.get('/api/orders', async (req, res) => {
+  const userId = req.headers['user-id'] || 'guest';
+  try {
+    const userOrders = await Order.find({ userId }).sort({ createdAt: -1 });
+    res.json(userOrders);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+const PORT = 5000;
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
