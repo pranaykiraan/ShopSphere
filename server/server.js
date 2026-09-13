@@ -1,10 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const MONGO_URI = process.env.MONGO_URI || 'YOUR_MONGODB_URI_HERE';
 const app = express();
 app.use(cors());
 app.use(express.json());
+
 
 // 1. Connect to MongoDB
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://pranaykrishna555_db_user:shopsphere@cluster0.1qajilf.mongodb.net/?appName=Cluster0';
@@ -41,18 +41,44 @@ const Order = mongoose.model('Order', orderSchema);
 
 // 3. API Routes
 
-// Seed Initial Products (if DB is empty)
+// Seed Initial Products with Static Picsum IDs
 app.get('/api/seed', async (req, res) => {
-  const count = await Product.countDocuments();
-  if (count === 0) {
-    await Product.insertMany([
-      { name: 'Wireless Headphones', description: 'High quality noise cancelling', price: 99.99, imageUrl: 'https://picsum.photos/200?random=1' },
-      { name: 'Mechanical Keyboard', description: 'Tactile switches with RGB', price: 129.99, imageUrl: 'https://picsum.photos/200?random=2' },
-      { name: 'Ergonomic Mouse', description: 'Precision mouse for long work hours', price: 49.99, imageUrl: 'https://picsum.photos/200?random=3' }
-    ]);
-    return res.json({ message: 'Database seeded with sample products!' });
+  try {
+    if (req.query.force === 'true') {
+      await Product.deleteMany({});
+    }
+
+    const count = await Product.countDocuments();
+    if (count === 0) {
+      await Product.insertMany([
+        { 
+          name: 'Wireless Headphones', 
+          description: 'High quality noise cancelling', 
+          price: 99.99, 
+          // ID 0 is a static tech/laptop desk image
+          imageUrl: 'https://picsum.photos/id/0/600/400' 
+        },
+        { 
+          name: 'Mechanical Keyboard', 
+          description: 'Tactile switches with RGB', 
+          price: 129.99, 
+          // ID 96 is a static workspace image
+          imageUrl: 'https://unsplash.com/photos/black-and-orange-computer-keyboard-50uD7HzOLW8' 
+        },
+        { 
+          name: 'Ergonomic Mouse', 
+          description: 'Precision mouse for long work hours', 
+          price: 49.99, 
+          // ID 119 is a static Macbook tech image
+          imageUrl: 'https://picsum.photos/id/119/600/400' 
+        }
+      ]);
+      return res.json({ message: 'Database re-seeded with fixed Picsum images!' });
+    }
+    res.json({ message: 'Database already has products. Use /api/seed?force=true to overwrite.' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
-  res.json({ message: 'Database already has products.' });
 });
 
 // GET All Products
@@ -64,7 +90,25 @@ app.get('/api/products', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+// Express route: GET /api/products
+app.get('/api/products', async (req, res) => {
+  try {
+    const products = await Product.find();
+    
+    // Map _id to id for client compatibility
+    const formattedProducts = products.map(p => ({
+      id: p._id.toString(),
+      name: p.name,
+      description: p.description,
+      price: p.price,
+      category: p.category
+    }));
 
+    res.json(formattedProducts);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching products from database', error: error.message });
+  }
+});
 // User Register
 app.post('/api/auth/register', async (req, res) => {
   const { name, email, password } = req.body;
