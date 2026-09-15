@@ -6,6 +6,8 @@ import { CartItem } from '../models/cart.model';
   providedIn: 'root'
 })
 export class CartService {
+  private readonly CART_KEY = 'shopsphere_cart';
+
   cart = signal<CartItem[]>([]);
   isCartOpen = signal<boolean>(false);
 
@@ -17,51 +19,73 @@ export class CartService {
     this.cart().reduce((acc, item) => acc + item.product.price * item.quantity, 0)
   );
 
+  constructor() {
+    this.restoreCart();
+  }
+
+  private restoreCart(): void {
+    const savedCart = localStorage.getItem(this.CART_KEY);
+    if (!savedCart) {
+      return;
+    }
+
+    try {
+      this.cart.set(JSON.parse(savedCart));
+    } catch (error) {
+      console.warn('Failed to parse saved cart state:', error);
+    }
+  }
+
+  private saveCart(items: CartItem[]): void {
+    this.cart.set(items);
+    localStorage.setItem(this.CART_KEY, JSON.stringify(items));
+  }
+
   addToCart(product: Product) {
-    // Determine unique ID key regardless of whether MongoDB returns _id or id
     const targetId = product.id || (product as any)._id || product.name;
-
-    this.cart.update(currentCart => {
-      const existingIndex = currentCart.findIndex(item => {
-        const itemId = item.product.id || (item.product as any)._id || item.product.name;
-        return itemId === targetId;
-      });
-
-      if (existingIndex > -1) {
-        // Product already exists in cart -> Increment quantity
-        const updatedCart = [...currentCart];
-        updatedCart[existingIndex] = {
-          ...updatedCart[existingIndex],
-          quantity: updatedCart[existingIndex].quantity + 1
-        };
-        return updatedCart;
-      } else {
-        // New unique product -> Add fresh deep copy
-        return [...currentCart, { product: { ...product, id: targetId }, quantity: 1 }];
-      }
+    const currentCart = this.cart();
+    const existingIndex = currentCart.findIndex(item => {
+      const itemId = item.product.id || (item.product as any)._id || item.product.name;
+      return itemId === targetId;
     });
 
+    const updatedCart = [...currentCart];
+
+    if (existingIndex > -1) {
+      updatedCart[existingIndex] = {
+        ...updatedCart[existingIndex],
+        quantity: updatedCart[existingIndex].quantity + 1
+      };
+    } else {
+      updatedCart.push({ product: { ...product, id: targetId }, quantity: 1 });
+    }
+
+    this.saveCart(updatedCart);
     this.isCartOpen.set(true);
   }
 
   updateQuantity(productId: string, quantity: number) {
     if (quantity <= 0) {
-      this.cart.update(cart => cart.filter(item => {
+      const filteredCart = this.cart().filter(item => {
         const itemId = item.product.id || (item.product as any)._id || item.product.name;
         return itemId !== productId;
-      }));
-    } else {
-      this.cart.update(cart => 
-        cart.map(item => {
-          const itemId = item.product.id || (item.product as any)._id || item.product.name;
-          return itemId === productId ? { ...item, quantity } : item;
-        })
-      );
+      });
+
+      this.saveCart(filteredCart);
+      return;
     }
+
+    const updatedCart = this.cart().map(item => {
+      const itemId = item.product.id || (item.product as any)._id || item.product.name;
+      return itemId === productId ? { ...item, quantity } : item;
+    });
+
+    this.saveCart(updatedCart);
   }
 
   clearCart() {
     this.cart.set([]);
+    localStorage.removeItem(this.CART_KEY);
   }
 
   async checkout() {

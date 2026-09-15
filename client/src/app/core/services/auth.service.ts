@@ -11,46 +11,51 @@ export class AuthService {
   constructor() {
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
-      this.currentUser.set(JSON.parse(savedUser));
+      try {
+        this.currentUser.set(JSON.parse(savedUser));
+      } catch (error) {
+        console.warn('Failed to parse saved user:', error);
+        localStorage.removeItem('user');
+      }
     }
   }
 
-  login(credentials: { email: ''; password: '' }) {
+  login(credentials: { email: string; password: string }) {
     this.authError.set('');
     return fetch('http://localhost:5000/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials)
     })
-    .then(res => res.json().then(data => ({ status: res.status, body: data })))
-    .then(res => {
-      if (res.status === 200) {
-        this.saveSession(res.body);
-        return true;
-      } else {
-        this.authError.set(res.body.message || 'Login failed');
-        return false;
-      }
-    });
+      .then(res => res.json().then(data => ({ status: res.status, body: data })))
+      .then(res => {
+        if (res.status === 200) {
+          this.saveSession(res.body);
+          return true;
+        } else {
+          this.authError.set(res.body.message || 'Login failed');
+          return false;
+        }
+      });
   }
 
-  register(userData: { name: ''; email: ''; password: '' }) {
+  register(userData: { name: string; email: string; password: string }) {
     this.authError.set('');
     return fetch('http://localhost:5000/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData)
     })
-    .then(res => res.json().then(data => ({ status: res.status, body: data })))
-    .then(res => {
-      if (res.status === 201) {
-        this.saveSession(res.body);
-        return true;
-      } else {
-        this.authError.set(res.body.message || 'Signup failed');
-        return false;
-      }
-    });
+      .then(res => res.json().then(data => ({ status: res.status, body: data })))
+      .then(res => {
+        if (res.status === 201) {
+          this.saveSession(res.body);
+          return true;
+        } else {
+          this.authError.set(res.body.message || 'Signup failed');
+          return false;
+        }
+      });
   }
 
   private saveSession(data: AuthResponse) {
